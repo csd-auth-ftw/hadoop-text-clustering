@@ -1,23 +1,47 @@
 package csd.auth.ftw;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.InputStreamReader;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 
-public class MapperClass extends Mapper<Text, Text, Text, Text> {
+public class MapperClass extends Mapper<Object, Text, Text, Text> {
     public static final String PUNCTUATION = "!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~´";
+    private ArrayList<String> stopWords;
+    
+    protected void setup(Context context) throws IOException {
+    	stopWords = new ArrayList<>();
+    	URI[] uris = context.getCacheFiles();
+    	Path stopWordsPath = null;
+    	
+    	for (URI uri: uris) {
+    		if (uri.toString().endsWith("stopwords.txt")) {
+    			stopWordsPath = new Path(uri);
+    			break;
+    		}
+    	}
+    	
+    	FileSystem hdfs = FileSystem.get(context.getConfiguration());
+    	BufferedReader br = new BufferedReader(new InputStreamReader(hdfs.open(stopWordsPath)));
+    	String line;
+    	while ((line = br.readLine()) != null) {
+    		String stopWord = line.trim();
+    		
+    		if (stopWord.length() > 0)
+    			stopWords.add(stopWord);
+    	}
+    }
 
-    public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+    protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
         String line = value.toString().toLowerCase();
         
         // remove whitespace
@@ -37,9 +61,10 @@ public class MapperClass extends Mapper<Text, Text, Text, Text> {
         for (String word: words)
             stemmedWords.add(applyStemming(word));
         
+        // write result
+        Text valueFilename = new Text(getCurrentFilename(context));
         for (String word: stemmedWords) {
             Text keyWord = new Text(word);
-            Text valueFilename = new Text(getCurrentFilename(context));
             
             context.write(keyWord, valueFilename);
         }
@@ -56,13 +81,11 @@ public class MapperClass extends Mapper<Text, Text, Text, Text> {
     }
     
     private HashSet<String> removeStopwords(HashSet<String> words) throws IOException {
-        List<String> stopwords = Files.readAllLines(Paths.get("C:\\users\\nikos\\stopwords.txt"), StandardCharsets.UTF_8);
         HashSet<String> filteredWords = new HashSet<>();
         
-        for (String word: words) {
-            if (!stopwords.contains(word))
+        for (String word: words)
+            if (!stopWords.contains(word))
                 filteredWords.add(word);
-        }
         
         return filteredWords;
     }
@@ -76,6 +99,6 @@ public class MapperClass extends Mapper<Text, Text, Text, Text> {
     }
     
     private String getCurrentFilename(Context context) {
-        return ((FileSplit) context.getInputSplit()).getPath().getName();
+        return ((FileSplit) context.getInputSplit()).getPath().toString();
     }
 }
