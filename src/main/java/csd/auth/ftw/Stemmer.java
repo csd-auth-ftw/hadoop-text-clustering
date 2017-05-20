@@ -1,5 +1,3 @@
-package csd.auth.ftw;
-
 /*
 
    Porter stemmer in Java. The original paper is in
@@ -33,6 +31,7 @@ package csd.auth.ftw;
    Release 4
 
 */
+package csd.auth.ftw;
 
 import java.io.*;
 

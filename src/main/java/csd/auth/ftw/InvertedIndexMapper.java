@@ -14,7 +14,7 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 
-public class MapperClass extends Mapper<Object, Text, Text, Text> {
+public class InvertedIndexMapper extends Mapper<Object, Text, Text, Text> {
     public static final String PUNCTUATION = "!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~´";
     private ArrayList<String> stopWords;
     

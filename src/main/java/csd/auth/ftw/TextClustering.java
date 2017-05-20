@@ -3,6 +3,7 @@ package csd.auth.ftw;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -19,9 +20,17 @@ public class TextClustering {
 	private static final String JAR_NAME = "text.jar";
 	private static final String STOPWORDS_FILEPATH = "cache/stopwords.txt";
 	
-	public TextClustering(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+	private String inputPath;
+	private String outputPath;
+	private int n;
+	
+	public TextClustering(String inputPath, String outputPath, int n) throws IOException, ClassNotFoundException, InterruptedException {
+	    this.inputPath = inputPath;
+	    this.outputPath = outputPath;
+	    this.n = n;
+	    
 	    // TODO
-        executeJob(INVERTED_INDEX_JOB_NAME, args[0], args[1]);
+        executeJob(INVERTED_INDEX_JOB_NAME, inputPath, outputPath);
 	}
 	
 	private int executeJob(String name, String inputPath, String outputPath) throws IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
@@ -34,18 +43,9 @@ public class TextClustering {
         job.setJar(JAR_NAME);
         
         if (name.equals(INVERTED_INDEX_JOB_NAME)) {
-            job.setMapperClass(MapperClass.class);
-            job.setReducerClass(ReducerClass.class);
-            
-            job.setOutputKeyClass(Text.class);
-            job.setOutputValueClass(IntArrayWritable.class);
-            job.setMapOutputKeyClass(Text.class);
-            job.setMapOutputValueClass(Text.class);
-            
-            // add cache files
-            job.addCacheFile(new Path(STOPWORDS_FILEPATH).toUri());
+            initInvertedIndexJob(job);
         } else if (name.equals(KMEANS_JOB_NAME)) {
-            // TODO
+            initKmeansJob(job);
         }
 
         FileInputFormat.addInputPath(job, new Path(inputPath));
@@ -53,14 +53,44 @@ public class TextClustering {
 
         return job.waitForCompletion(true) ? 0 : 1;
 	}
+	
+	private void initInvertedIndexJob(Job job) {
+	    job.setMapperClass(InvertedIndexMapper.class);
+        job.setReducerClass(InvertedIndexReducer.class);
+        
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntArrayWritable.class);
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(Text.class);
+        
+        // add cache files
+        job.addCacheFile(new Path(STOPWORDS_FILEPATH).toUri());
+	}
+	
+	private void initKmeansJob(Job job) {
+        
+    }
+	
+	private void initKmeansLastJob(Job job) {
+        
+    }
     
     public static void main(String[] args) throws ClassNotFoundException, IOException, InterruptedException {
-    	if (args.length != 2) {
-			System.out.println("ERROR! Please enter input and output paths");
+        if (args.length != 3) {
+			System.out.println("ERROR! Please enter input, output paths and the number of kmeans repeation");
 			System.exit(1);
 		}
     	
-    	new TextClustering(args);
+    	// check if third argument is number
+    	int n = 1;
+    	try {
+    	    n = Integer.parseInt(args[2]);
+    	} catch(NumberFormatException exc) {
+    	    System.out.println("ERROR! The third argument must be a valid number (integer)");
+            System.exit(1);
+    	}
+    	
+    	new TextClustering(args[0], args[1], n);
     }
 
 }

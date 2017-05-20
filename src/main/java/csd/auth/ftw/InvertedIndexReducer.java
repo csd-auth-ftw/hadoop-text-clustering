@@ -11,7 +11,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
 
-public class ReducerClass extends Reducer<Text, Text, Text, IntArrayWritable> {
+public class InvertedIndexReducer extends Reducer<Text, Text, Text, IntArrayWritable> {
     private static ArrayList<String> inputFiles = null;
     
     protected void setup(Context context) throws IOException {
