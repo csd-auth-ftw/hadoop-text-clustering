@@ -31,6 +31,9 @@ public class TextClustering {
 	    
 	    // TODO
         executeJob(INVERTED_INDEX_JOB_NAME, inputPath, outputPath);
+//        executeJob();
+        
+        // TODO merge reduce files, rename to centers.txt
 	}
 	
 	private int executeJob(String name, String inputPath, String outputPath) throws IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
