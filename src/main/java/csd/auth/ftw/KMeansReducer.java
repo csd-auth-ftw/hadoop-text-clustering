@@ -9,12 +9,10 @@ import org.apache.hadoop.mapreduce.Reducer;
 public class KMeansReducer extends Reducer<IntWritable, IntArrayWritable, IntWritable, IntArrayWritable> {
     
     public void reduce(IntWritable key, Iterable<IntArrayWritable> values, Context context) throws InterruptedException, IOException {
-        // key: the center values: list of vectors
-        
-        // TODO find average  done, I think
+        // find average
         IntArrayWritable average = getAverage(values);
         
-        // TODO write key: key value: avg_vector done
+        // write new center position
         context.write(key, average);
     }
 
