@@ -4,19 +4,28 @@ import java.io.IOException;
 import java.util.Iterator;
 
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
 
-public class KMeansReducer extends Reducer<IntWritable, IntArrayWritable, IntWritable, IntArrayWritable> {
+public class KMeansReducer extends Reducer<IntWritable, Text, IntWritable, Text> {
     
-    public void reduce(IntWritable key, Iterable<IntArrayWritable> values, Context context) throws InterruptedException, IOException {
-        // find average
-        IntArrayWritable average = getAverage(values);
-        
-        // write new center position
-        context.write(key, average);
+    public void reduce(IntWritable key, Iterable<Text> values, Context context) throws InterruptedException, IOException {
+        if (isLastJob()) { // CHECK NAME FROM CONTEXT
+            // TODO extract words from values and write them
+            
+            context.write(key, average);
+        } else {
+            // TODO extract vectors and get average
+            // find average
+            IntArrayWritable average = getAverage(values);
+            
+            // TODO
+//            IntArrayWritable.arrayToString(arr);
+            context.write(key, average);
+        }
     }
 
-    private IntArrayWritable getAverage(Iterable<IntArrayWritable> values){
+    private IntArrayWritable getAverage(Iterable<Text> values){
         //getting the number of vectors in the Iterable
         int vectorNum = getIterableSize(values.iterator());
         //getting the length of the vectors

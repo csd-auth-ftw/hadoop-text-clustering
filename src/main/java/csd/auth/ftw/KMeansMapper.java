@@ -14,11 +14,57 @@ import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 
-public class KMeansMapper extends Mapper<Text, IntArrayWritable, IntWritable, IntArrayWritable> {
+public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
     public static final int K = 3;
     protected static final int RAND_SEED = 2017;
     
     protected int[][] centers = null;
+    
+    public static String getWordFromLine(String line) {
+        String regx = "([a-zA-Z][a-zA-Z0-9]+) \\[(.*)\\]";
+        Pattern pattern = Pattern.compile(regx);
+        Matcher matcher = pattern.matcher(line.trim());
+        
+        if (matcher.find())
+            return matcher.group(1);
+        
+        return null;
+    }
+    
+    public static int getCenterFromLine(String line) {
+        String regx = "(\\d+) \\[(.*)\\]";
+        Pattern pattern = Pattern.compile(regx);
+        Matcher matcher = pattern.matcher(line.trim());
+        
+        if (matcher.find())
+            return Integer.parseInt(matcher.group(1));
+        
+        return -1;
+    }
+    
+    public static int[] getVectorFromLine(String line, boolean hasCenter) {
+        String regx = "([a-zA-Z][a-zA-Z0-9]+) \\[(.*)\\]";
+        if (hasCenter)
+            regx = "(\\d+) \\[(.*)\\]";
+        
+        Pattern pattern = Pattern.compile(regx);
+        Matcher matcher = pattern.matcher(line.trim());
+        
+        String vectorStr;
+        if (matcher.find()) {
+            vectorStr = matcher.group(2);
+            String[] values = vectorStr.split(",");
+            
+            int[] vector = new int[values.length];
+            
+            for (int i=0; i<values.length; i++)
+                vector[i] = Integer.parseInt(values[i].trim());
+            
+            return vector;
+        }
+        
+        return null;
+    }
     
     protected void setup(Context context) throws IOException {
         URI[] uris = context.getCacheFiles();
@@ -71,11 +117,10 @@ public class KMeansMapper extends Mapper<Text, IntArrayWritable, IntWritable, In
         }
     }
     
-    protected void map(Text key, IntArrayWritable value, Context context) throws IOException, InterruptedException {
-        IntWritable[] intWritables = value.get();
-        int[] wordVector = new int[intWritables.length];
-        for (int i=0; i<wordVector.length; i++)
-            wordVector[i] = intWritables[i].get();
+    protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+        String line = value.toString();        
+        String word = getWordFromLine(line);
+        int[] wordVector = getVectorFromLine(line, false);
         
         int[][] centers = getCenters(wordVector.length);
         int centersNumber = centers.length;

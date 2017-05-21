@@ -24,6 +24,16 @@ public class IntArrayWritable extends ArrayWritable {
         sb.deleteCharAt(sb.length() - 1).append("]");
         return sb.toString();
     }
+	
+	public static String arrayToString(int[] arr) {
+	    StringBuilder sb = new StringBuilder("[");
+        for (int num: arr) {
+            sb.append(num + " ");
+        }
+        
+        sb.deleteCharAt(sb.length() - 1).append("]");
+        return sb.toString();
+	}
 
 	public static IntArrayWritable createFromArray(int[] disList) {
 		IntWritable[] values = new IntWritable[disList.length];

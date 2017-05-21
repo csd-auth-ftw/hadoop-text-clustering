@@ -16,6 +16,7 @@ public class TextClustering {
     // job names
 	public static final String INVERTED_INDEX_JOB_NAME = "INVERTED_INDEX_JOB_NAME";
 	public static final String KMEANS_JOB_NAME = "KMEANS_JOB_NAME";
+	public static final String KMEANS_LAST_JOB_NAME = "KMEANS_LAST_JOB_NAME";
 	
 	// conf keys
 	public static final String KEY_INPUT_DIR = "key_input_dir";
