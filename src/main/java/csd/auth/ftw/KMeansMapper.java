@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -15,13 +16,19 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 
 public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
+    private static final String CID_VECTOR_REGEX = "(\\d+)\\s+\\[(.*)\\]";
+    private static final String WORD_VECTOR_REGEX = "([a-zA-Z][a-zA-Z0-9]+)\\s+\\[(.*)\\]";
+    
     public static final int K = 3;
-    protected static final int RAND_SEED = 2017;
+    private static final int RAND_SEED = 2017;
     
     protected int[][] centers = null;
     
+    /**
+     * Extracts the word from a line
+     */
     public static String getWordFromLine(String line) {
-        String regx = "([a-zA-Z][a-zA-Z0-9]+) \\[(.*)\\]";
+        String regx = WORD_VECTOR_REGEX;
         Pattern pattern = Pattern.compile(regx);
         Matcher matcher = pattern.matcher(line.trim());
         
@@ -31,8 +38,11 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         return null;
     }
     
+    /**
+     * Extracts the center id from a line
+     */
     public static int getCenterFromLine(String line) {
-        String regx = "(\\d+) \\[(.*)\\]";
+        String regx = CID_VECTOR_REGEX;
         Pattern pattern = Pattern.compile(regx);
         Matcher matcher = pattern.matcher(line.trim());
         
@@ -42,10 +52,13 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         return -1;
     }
     
+    /**
+     * Extracts the vector from a line
+     */
     public static int[] getVectorFromLine(String line, boolean hasCenter) {
-        String regx = "([a-zA-Z][a-zA-Z0-9]+) \\[(.*)\\]";
+        String regx = WORD_VECTOR_REGEX;
         if (hasCenter)
-            regx = "(\\d+) \\[(.*)\\]";
+            regx = CID_VECTOR_REGEX;
         
         Pattern pattern = Pattern.compile(regx);
         Matcher matcher = pattern.matcher(line.trim());
@@ -53,7 +66,8 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         String vectorStr;
         if (matcher.find()) {
             vectorStr = matcher.group(2);
-            String[] values = vectorStr.split(",");
+            System.out.println("vectorStr=" + vectorStr);
+            String[] values = vectorStr.split(IntArrayWritable.SEPARATOR);
             
             int[] vector = new int[values.length];
             
@@ -71,6 +85,9 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         Path centersPath = null;
         
         // search for centers.txt in cache
+        if (uris == null)
+        	return;
+        
         for (URI uri: uris) {
             if (uri.toString().endsWith("centers.txt")) {
                 centersPath = new Path(uri);
@@ -85,52 +102,52 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
             BufferedReader br = new BufferedReader(new InputStreamReader(hdfs.open(centersPath)));
             String line;
             
-            // regex
-            String regx = "(\\d+) \\[(.*)\\]";
-            Pattern pattern = Pattern.compile(regx);
-            
+            // extract data from each line
             while ((line = br.readLine()) != null) {
                 String centerLine = line.trim();
                 
                 if (centerLine.length() > 0) {
-                    Matcher matcher = pattern.matcher(centerLine);
-                    
-                    int cID = 0;
-                    String vectorStr = "";
-                    
-                    if (matcher.find()) {
-                        cID = Integer.parseInt(matcher.group(1));
-                        vectorStr = matcher.group(2);
-                    }
-                    
-                    String[] values = vectorStr.split(",");
+                    int cID = getCenterFromLine(centerLine);
+                    int[] vector = getVectorFromLine(centerLine, true);
                     
                     // init centers
-                    if (centers == null)
-                        centers = new int[K][values.length];
+                    if (centers == null) {
+                    	centers = getRandomCenters(vector.length);
+                    }
                     
-                    // update centers
-                    for (int i=0; i<values.length; i++)
-                        centers[cID][i] = Integer.parseInt(values[i].trim());
+                    centers[cID] = vector;
                 }
             }
         }
     }
     
     protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-        String line = value.toString();        
-        String word = getWordFromLine(line);
+        String line = value.toString();
+        
+        System.out.println("line_input: " + line);
+        
         int[] wordVector = getVectorFromLine(line, false);
         
-        int[][] centers = getCenters(wordVector.length);
+        System.out.println("Word vector:");
+        System.out.println(Arrays.toString(wordVector));
+        
+        // ensure centers is set
+        setCenters(wordVector.length);
+        
+        System.out.println("centers_list:");
+        for (int e=0; e<K; e++)
+        	System.out.println(Arrays.toString(centers[e]));
+        
         int centersNumber = centers.length;
         int minCID = -1;
-        double minDistance = -1.0;
+        double minDistance = Double.MAX_VALUE;
         double tempDistance;
         
         // For all the centers calculate the distance
-        for(int i=0; i<centersNumber; centersNumber++) {
+        for(int i=0; i<centersNumber; i++) {
         	tempDistance = getDistance(wordVector, centers[i]);
+        	
+        	System.out.println("current cid:" + i + " dis:" + tempDistance);
         	
         	if (i == 0 || tempDistance < minDistance) {
         		minDistance = tempDistance;
@@ -138,7 +155,10 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         	}
         }
         
+        System.out.println("minCID:" + minCID + " minDis:" + minDistance);
+        
         // write the closest center id with the word vector
+        System.out.println("WROTE_RESULT: key=" + minCID + " value=" + value);
         context.write(new IntWritable(minCID), value);
     }
 
@@ -162,21 +182,27 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
     	return 1 - (numerator/denominator);
     }
     
-    private int[][] getCenters(int len) throws IOException {
-        // if already set from the file
+    private void setCenters(int len) throws IOException {
+        // if already set from the setup()
         if (centers != null)
-            return centers;
+            return;
+        
+        System.out.println("Randomize centers plox");
         
         // else randomize centers
-        Random generator = new Random(RAND_SEED);
-        int[][] centers = new int[K][len];
-        for (int i=0; i<K; i++) {
+        centers = getRandomCenters(len);
+    }
+    
+    private int[][] getRandomCenters(int len) {
+    	Random generator = new Random(RAND_SEED);
+    	int[][] randCenters = new int[K][len];
+    	for (int i=0; i<K; i++) {
             for (int j=0; j<len; j++) {
-                centers[i][j] = generator.nextInt() % 2;
+            	randCenters[i][j] = generator.nextInt(2);
             }
         }
-        
-        return centers;
+    	
+    	return randCenters;
     }
     
 }

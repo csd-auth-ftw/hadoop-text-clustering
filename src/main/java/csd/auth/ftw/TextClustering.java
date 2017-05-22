@@ -40,27 +40,44 @@ public class TextClustering {
 	    Path tmpInvIndOutPath = new Path(DEF_PATH_INVERTED_INDEX_OUT);
         Path tmpKmOutPath = new Path(DEF_PATH_KMEANS_OUT);
 	    
-	    Configuration conf = new Configuration();
+	    conf = new Configuration();
 	    conf.set(KEY_INPUT_DIR, inputPathStr);
 	    conf.set(KEY_OUTPUT_DIR, outputPathStr);
 	    
 	    hdfs = FileSystem.get(conf);
 	    
+	    // delete inverted index output
+	    deleteFile(tmpInvIndOutPath, true);
+	    
+	    // delete previous centers.txt
+	    deleteFile(CENTERS_FILEPATH, false);
+	    
         executeJob(INVERTED_INDEX_JOB_NAME, inputPath, tmpInvIndOutPath);
-        executeJob(KMEANS_JOB_NAME, tmpInvIndOutPath, tmpKmOutPath);
         
-        FileUtil.copyMerge(hdfs, tmpKmOutPath, hdfs, new Path(CENTERS_FILEPATH), true, conf, "");
-        
-        System.out.println("FINISHED");
-        
-        // TODO merge reduce files, rename to centers.txt
-//        for (int i=0; i<n; i++) {
-//            if (i < n-1) {
-//                
-//            } else {
-//                // last
-//            }
-//        }
+        for (int i=0; i<n; i++) {
+        	// delete kmeans output
+        	deleteFile(tmpKmOutPath, true);
+    	    
+            if (i < n-1) {
+            	executeJob(KMEANS_JOB_NAME, tmpInvIndOutPath, tmpKmOutPath);
+            	
+            	// delete previous centers.txt
+            	deleteFile(CENTERS_FILEPATH, false);
+                
+                FileUtil.copyMerge(hdfs, tmpKmOutPath, hdfs, new Path(CENTERS_FILEPATH), true, conf, "");
+            } else {
+            	executeJob(KMEANS_LAST_JOB_NAME, tmpInvIndOutPath, outputPath);
+            }
+        }
+	}
+	
+	private void deleteFile(String pathStr, boolean rec) throws IllegalArgumentException, IOException {
+		deleteFile(new Path(pathStr), rec);
+	}
+	
+	private void deleteFile(Path path, boolean rec) throws IOException {
+		if (hdfs.exists(path))
+	    	hdfs.delete(path, rec);
 	}
 	
 	private int executeJob(String name, Path inputPath, Path outputPath) throws IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
@@ -74,7 +91,7 @@ public class TextClustering {
         
         if (name.equals(INVERTED_INDEX_JOB_NAME)) {
             initInvertedIndexJob(job);
-        } else if (name.equals(KMEANS_JOB_NAME)) {
+        } else {
             initKmeansJob(job);
         }
 
@@ -102,18 +119,14 @@ public class TextClustering {
         job.setReducerClass(KMeansReducer.class);
         
         job.setOutputKeyClass(IntWritable.class);
-        job.setOutputValueClass(IntArrayWritable.class);
+        job.setOutputValueClass(Text.class);
         job.setMapOutputKeyClass(IntWritable.class);
-        job.setMapOutputValueClass(IntArrayWritable.class);
+        job.setMapOutputValueClass(Text.class);
         
         // add cache files
         Path centers = new Path(CENTERS_FILEPATH);
         if (hdfs.exists(centers))
             job.addCacheFile(centers.toUri());
-    }
-	
-	private void initKmeansLastJob(Job job) {
-        
     }
     
     public static void main(String[] args) throws ClassNotFoundException, IOException, InterruptedException {
