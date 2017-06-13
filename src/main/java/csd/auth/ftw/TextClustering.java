@@ -1,8 +1,16 @@
 package csd.auth.ftw;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.util.Arrays;
+import java.util.Comparator;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
@@ -21,6 +29,7 @@ public class TextClustering {
 	// conf keys
 	public static final String KEY_INPUT_DIR = "key_input_dir";
 	public static final String KEY_OUTPUT_DIR = "key_output_dir";
+	public static final String KEY_K_NUMBER = "key_k_number";
 	
 	// default i/o paths
 	private static final String DEF_PATH_INVERTED_INDEX_OUT = "def_iiout";
@@ -33,7 +42,7 @@ public class TextClustering {
 	private Configuration conf;
 	private FileSystem hdfs;
 	
-	public TextClustering(String inputPathStr, String outputPathStr, int n) throws IOException, ClassNotFoundException, InterruptedException {
+	public TextClustering(String inputPathStr, String outputPathStr, int k, int n) throws IOException, ClassNotFoundException, InterruptedException {
 	    // set i/o paths for jobs
 	    Path inputPath = new Path(inputPathStr);
 	    Path outputPath = new Path(outputPathStr);
@@ -43,16 +52,20 @@ public class TextClustering {
 	    conf = new Configuration();
 	    conf.set(KEY_INPUT_DIR, inputPathStr);
 	    conf.set(KEY_OUTPUT_DIR, outputPathStr);
+	    conf.set(KEY_K_NUMBER, k + "");
 	    
 	    hdfs = FileSystem.get(conf);
 	    
-	    // delete inverted index output
+	    // delete files from previous executions
 	    deleteFile(tmpInvIndOutPath, true);
-	    
-	    // delete previous centers.txt
+	    deleteFile(outputPath, true);
 	    deleteFile(CENTERS_FILEPATH, false);
 	    
+	    // build inverted index
         executeJob(INVERTED_INDEX_JOB_NAME, inputPath, tmpInvIndOutPath);
+        
+        // create random centers file
+        createRandomCenters(k, tmpInvIndOutPath);
         
         for (int i=0; i<n; i++) {
         	// delete kmeans output
@@ -71,20 +84,88 @@ public class TextClustering {
         }
 	}
 	
+	/**
+	 * Creates a file containing k random centers based
+	 * on the data created from the inverted index job
+	 */
+	private void createRandomCenters(int k, Path tmpInvIndOutPath) throws FileNotFoundException, IOException {
+		FileStatus[] fileStatuses = hdfs.listStatus(tmpInvIndOutPath);
+		
+		// sort files by size
+		Arrays.sort(fileStatuses, new Comparator<FileStatus>() {
+
+			@Override
+			public int compare(FileStatus o1, FileStatus o2) {
+				return o1.getLen() >= o2.getLen() ? -1: 1;
+			}
+			
+		});
+		
+		// read from the biggest file
+		Path biggestFilePath = fileStatuses[0].getPath();
+		BufferedReader br = new BufferedReader(new InputStreamReader(hdfs.open(biggestFilePath)));
+        String line;
+        int[][] centers = null;
+        int i = 0;
+        
+        // extract data from each line
+        while ((line = br.readLine()) != null && i < k) {
+        	int[] vector = KMeansMapper.getVectorFromLine(line, false);
+        	
+        	if (centers == null)
+        		centers = new int[k][vector.length];
+        	
+        	if (!containsVector(centers, vector, i))
+        		centers[i++] = vector;
+        }
+        
+        // fill the rest with random vectors if needed
+        if (i != k) {
+        	
+        }
+        
+        // convert centers to file
+        StringBuilder sb = new StringBuilder();
+        for (int j=0; j<k; j++) {
+        	sb.append(j + "\t" + IntArrayWritable.arrayToText(centers[j]).toString() +  "\n");
+        }
+        
+        // write to file
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(hdfs.create(new Path(CENTERS_FILEPATH), true)));
+        bw.write(sb.toString());
+        bw.close();
+	}
+	
+	/**
+	 * Checks if array contains a certain vector
+	 */
+	private boolean containsVector(int[][] arr, int[] vector, int len) {
+		for (int i=0; i<len; i++)
+			if (Arrays.equals(arr[i], vector))
+				return true;
+		
+		return false;
+	}
+	
+	/**
+	 * Deletes a file from hdfs
+	 */
 	private void deleteFile(String pathStr, boolean rec) throws IllegalArgumentException, IOException {
 		deleteFile(new Path(pathStr), rec);
 	}
 	
+	/**
+	 * Deletes a file from hdfs
+	 */
 	private void deleteFile(Path path, boolean rec) throws IOException {
 		if (hdfs.exists(path))
 	    	hdfs.delete(path, rec);
 	}
 	
+	/**
+	 * Executes a hadoop job
+	 */
 	private int executeJob(String name, Path inputPath, Path outputPath) throws IllegalArgumentException, IOException, ClassNotFoundException, InterruptedException {
-//	    Configuration conf = new Configuration();
-//        conf.set(KEY_INPUT_DIR, inputPath);
-//        conf.set(KEY_OUTPUT_DIR, outputPath);
-        
         Job job = Job.getInstance(conf, name);
         job.setJarByClass(TextClustering.class);
         job.setJar(JAR_NAME);
@@ -101,6 +182,9 @@ public class TextClustering {
         return job.waitForCompletion(true) ? 0 : 1;
 	}
 	
+	/**
+	 * Initializes an inverted index job
+	 */
 	private void initInvertedIndexJob(Job job) {
 	    job.setMapperClass(InvertedIndexMapper.class);
         job.setReducerClass(InvertedIndexReducer.class);
@@ -114,6 +198,9 @@ public class TextClustering {
         job.addCacheFile(new Path(STOPWORDS_FILEPATH).toUri());
 	}
 	
+	/**
+	 * Initializes a kmeans job
+	 */
 	private void initKmeansJob(Job job) throws IllegalArgumentException, IOException {
 	    job.setMapperClass(KMeansMapper.class);
         job.setReducerClass(KMeansReducer.class);
@@ -129,22 +216,34 @@ public class TextClustering {
             job.addCacheFile(centers.toUri());
     }
     
+	/**
+	 * The main function of the application
+	 */
     public static void main(String[] args) throws ClassNotFoundException, IOException, InterruptedException {
-        if (args.length != 3) {
-			System.out.println("ERROR! Please enter input, output paths and the number of kmeans repeations");
+        if (args.length != 4) {
+			System.out.println("ERROR! Please enter input, output paths, the number of teams (k) and the number of kmeans repeations");
 			System.exit(1);
 		}
     	
     	// check if third argument is number
-    	int n = 1;
+    	int k = 3;
     	try {
-    	    n = Integer.parseInt(args[2]);
+    	    k = Integer.parseInt(args[2]);
     	} catch(NumberFormatException exc) {
     	    System.out.println("ERROR! The third argument must be a valid number (integer)");
             System.exit(1);
     	}
     	
-    	new TextClustering(args[0], args[1], n);
+    	// check if third argument is number
+    	int n = 2;
+    	try {
+    	    n = Integer.parseInt(args[3]);
+    	} catch(NumberFormatException exc) {
+    	    System.out.println("ERROR! The fourth argument must be a valid number (integer)");
+            System.exit(1);
+    	}
+    	
+    	new TextClustering(args[0], args[1], k, n);
     }
 
 }

@@ -15,7 +15,7 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 
 public class InvertedIndexMapper extends Mapper<Object, Text, Text, Text> {
-    public static final String PUNCTUATION = "!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~´";
+    public static final String PUNCTUATION = "!\"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~´–";
     private ArrayList<String> stopWords;
     
     protected void setup(Context context) throws IOException {
@@ -50,17 +50,29 @@ public class InvertedIndexMapper extends Mapper<Object, Text, Text, Text> {
         // remove punctuation
         line = removePunctuation(line);
         
+        if (line.length() < 1)
+        	return;
+        
         // keep unique words
         HashSet<String> words = new HashSet<String>(Arrays.asList(line.split(" ")));
         
         // remove stopwords
         words = removeStopwords(words);
        
-        // stem each word
         ArrayList<String> stemmedWords = new ArrayList<String>();
-        for (String word: words)
+        for (String word: words) {
+        	// remove empty words
+        	if (word.length() < 1)
+        		continue;
+        	
+        	// remove if its not a simple word or remove
+        	if (!word.matches("^[a-zA-Z][a-zA-Z0-9]+$"))
+        		continue;
+        	
+        	// stem each word
             stemmedWords.add(applyStemming(word));
-        
+        }
+            
         // write result
         Text valueFilename = new Text(getCurrentFilename(context));
         for (String word: stemmedWords) {

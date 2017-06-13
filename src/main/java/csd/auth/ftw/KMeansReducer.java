@@ -2,7 +2,6 @@ package csd.auth.ftw;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -14,11 +13,9 @@ public class KMeansReducer extends Reducer<IntWritable, Text, IntWritable, Text>
     public void reduce(IntWritable key, Iterable<Text> values, Context context) throws InterruptedException, IOException {
     	Text[] valuesArr = iterableToArray(values);
     	
-    	System.out.println("valuesArr:");
-    	for (int o=0; o<valuesArr.length; o++)
-    		System.out.println(valuesArr[o].toString());
+    	String jobName = context.getJobName();
     	
-        if (context.getJobName().equals(TextClustering.KMEANS_LAST_JOB_NAME)) { // CHECK NAME FROM CONTEXT
+        if (jobName.equals(TextClustering.KMEANS_LAST_JOB_NAME)) {
             String[] words = new String[valuesArr.length];
             int i =0;
 
@@ -32,24 +29,23 @@ public class KMeansReducer extends Reducer<IntWritable, Text, IntWritable, Text>
             String allWords  = String.join(" ", words);
 
             context.write(key, new Text(allWords));
-        } else if (context.getJobName().equals(TextClustering.KMEANS_JOB_NAME)) {
+        } else if (jobName.equals(TextClustering.KMEANS_JOB_NAME)) {
             int[] average = getAverage(valuesArr);
 
             context.write(key, IntArrayWritable.arrayToText(average));
         } else {
             System.err.println("Wrong job type.");
-            // maybe throw some exception here?
+            System.exit(1);
         }
     }
-
+    
+    /**
+     * Converts an iterable to an array
+     */
     private Text[] iterableToArray(Iterable<Text> values) {
 		ArrayList<String> tmp = new ArrayList<>();
 		for (Text value: values)
 			tmp.add(value.toString());
-		
-		System.out.println("iter_size:" + tmp.size());
-		
-//		return (Text[]) tmp.toArray(); throws error
 		
 		Text[] arr = new Text[tmp.size()];
 		for (int i=0; i<tmp.size(); i++)
@@ -58,41 +54,31 @@ public class KMeansReducer extends Reducer<IntWritable, Text, IntWritable, Text>
 		return arr;
 	}
 
-	private int[] getAverage(Text[] values){
-        //getting the number of vectors in the Iterable
-        int vectorNum = values.length;
-        
-        System.out.println("vectorNum:" + vectorNum);
-        
-        //getting the length of the vectors
-        System.out.println("values[0]=" + values[0].toString());
+	private int[] getAverage(Text[] values){        
+        // gets the length of each vector
         int vectorLen = getVectorFromLine(values[0].toString(), false).length;
         int[] averageVector = new int[vectorLen];
+        int max = 0;
         
         for (Text textVector : values) {
             int[] intVector = getVectorFromLine(textVector.toString(), false);
             for (int i = 0; i < vectorLen; i++) {
                 averageVector[i] += intVector[i];
+                
+                if (averageVector[i] > max)
+                	max = averageVector[i];
             }
         }
         
+        // calculate average
         double tempAverage;
         for (int i = 0; i < vectorLen; i++){
-            tempAverage = (double) averageVector[i] / (double) vectorNum;
+        	// divide with max not vectors num to avoid everything to 
+        	// turn to 0 because of the sparse vectors
+        	tempAverage = (double) averageVector[i] / (double) max; 
             averageVector[i] = (tempAverage >= 0.5) ? 1 : 0;
         }
         
         return averageVector;
-    }
-
-    //small function for finding the number of elements in an Iterable
-    public static int getIterableSize(Iterator iterator){
-        int i = 0;
-        while (iterator.hasNext()) {
-            i++;
-            iterator.next();
-        }
-        
-        return i;
     }
 }

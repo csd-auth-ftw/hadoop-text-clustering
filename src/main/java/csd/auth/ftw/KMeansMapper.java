@@ -19,10 +19,10 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
     private static final String CID_VECTOR_REGEX = "(\\d+)\\s+\\[(.*)\\]";
     private static final String WORD_VECTOR_REGEX = "([a-zA-Z][a-zA-Z0-9]+)\\s+\\[(.*)\\]";
     
-    public static final int K = 3;
     private static final int RAND_SEED = 2017;
     
-    protected int[][] centers = null;
+    private int[][] centers = null;
+    private boolean hasRandomCenters = false;
     
     /**
      * Extracts the word from a line
@@ -66,7 +66,6 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         String vectorStr;
         if (matcher.find()) {
             vectorStr = matcher.group(2);
-            System.out.println("vectorStr=" + vectorStr);
             String[] values = vectorStr.split(IntArrayWritable.SEPARATOR);
             
             int[] vector = new int[values.length];
@@ -112,7 +111,8 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
                     
                     // init centers
                     if (centers == null) {
-                    	centers = getRandomCenters(vector.length);
+                    	int centersNumber = Integer.parseInt(context.getConfiguration().get(TextClustering.KEY_K_NUMBER));
+                    	centers = getRandomCenters(centersNumber, vector.length);
                     }
                     
                     centers[cID] = vector;
@@ -123,22 +123,21 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
     
     protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
         String line = value.toString();
-        
-        System.out.println("line_input: " + line);
+        int centersNumber = Integer.parseInt(context.getConfiguration().get(TextClustering.KEY_K_NUMBER));
         
         int[] wordVector = getVectorFromLine(line, false);
         
-        System.out.println("Word vector:");
-        System.out.println(Arrays.toString(wordVector));
-        
         // ensure centers is set
-        setCenters(wordVector.length);
+        setCenters(centersNumber, wordVector.length);
         
-        System.out.println("centers_list:");
-        for (int e=0; e<K; e++)
-        	System.out.println(Arrays.toString(centers[e]));
+//        if (hasRandomCenters) {
+//        	int k = Integer.parseInt(context.getConfiguration().get(TextClustering.KEY_K_NUMBER));
+//        	Random generator = new Random(RAND_SEED);
+//        	int minCID = generator.nextInt(k);
+//        	context.write(new IntWritable(minCID), value);
+//        	return;
+//        }
         
-        int centersNumber = centers.length;
         int minCID = -1;
         double minDistance = Double.MAX_VALUE;
         double tempDistance;
@@ -147,18 +146,13 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
         for(int i=0; i<centersNumber; i++) {
         	tempDistance = getDistance(wordVector, centers[i]);
         	
-        	System.out.println("current cid:" + i + " dis:" + tempDistance);
-        	
         	if (i == 0 || tempDistance < minDistance) {
         		minDistance = tempDistance;
         		minCID = i;
         	}
         }
         
-        System.out.println("minCID:" + minCID + " minDis:" + minDistance);
-        
         // write the closest center id with the word vector
-        System.out.println("WROTE_RESULT: key=" + minCID + " value=" + value);
         context.write(new IntWritable(minCID), value);
     }
 
@@ -182,21 +176,25 @@ public class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
     	return 1 - (numerator/denominator);
     }
     
-    private void setCenters(int len) throws IOException {
+    private void setCenters(int centersNumber, int len) throws IOException {
         // if already set from the setup()
         if (centers != null)
             return;
         
-        System.out.println("Randomize centers plox");
-        
         // else randomize centers
-        centers = getRandomCenters(len);
+        hasRandomCenters = true;
+        centers = getRandomCenters(centersNumber, len);
     }
     
-    private int[][] getRandomCenters(int len) {
+    /**
+     * Creates random centers using an rng
+     * @param len
+     * @return
+     */
+    private int[][] getRandomCenters(int k, int len) {
     	Random generator = new Random(RAND_SEED);
-    	int[][] randCenters = new int[K][len];
-    	for (int i=0; i<K; i++) {
+    	int[][] randCenters = new int[k][len];
+    	for (int i=0; i<k; i++) {
             for (int j=0; j<len; j++) {
             	randCenters[i][j] = generator.nextInt(2);
             }
